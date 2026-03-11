@@ -1,201 +1,133 @@
-# BF Suma Nexus
+# BF Suma Nexus — Production SaaS Platform
 
-A production-ready wellness supplements management platform built with Next.js 16, React 19, Supabase, and Capacitor for cross-platform deployment (Web, iOS, Android).
+A production-grade SaaS platform for distributor and client management, built with Next.js 16, Supabase, and Stripe.
 
-## 🚀 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16 (App Router) |
-| UI | React 19, Tailwind CSS v4 |
-| Auth & Database | Supabase (SSR + RLS) |
-| Charts | Recharts (lazy-loaded) |
-| Icons | Lucide React |
-| Mobile | Capacitor 7 (iOS + Android) |
-| PWA | Service Worker + Web Manifest |
-| Deployment | Vercel (web), Xcode (iOS), Android Studio (Android) |
+| Frontend | Next.js 16 (App Router), TypeScript, TailwindCSS |
+| Backend | Supabase (Auth, Database, Realtime) |
+| Payments | Stripe (subscriptions, webhooks) |
+| Deployment | Vercel |
+| Charts | Recharts |
 
-## 📁 Project Structure
+## Features
+
+### Role-Based Access Control
+- **Admin** — Full platform access, analytics, distributor management
+- **Distributor** — Client management, order tracking, real-time messaging, GPS location
+- **Client** — Order tracking, distributor communication, subscription management
+
+### Admin Dashboard
+- Revenue trend charts (30-day area chart)
+- Order volume bar charts
+- Real-time activity feed
+- Distributor performance stats
+- Client statistics
+
+### Distributor System
+- Assigned client list with order history
+- Real-time messaging with clients
+- GPS location tracking
+- Commission tracking
+- Rank system (Bronze → Silver → Gold → Platinum)
+
+### Client Portal
+- Order tracking with status updates
+- Direct messaging with distributor
+- Subscription management (Free/Pro/Enterprise)
+- Wellness analytics
+
+### Real-Time Features (Supabase Realtime)
+- Live messaging between distributors and clients
+- Real-time distributor location updates
+- In-app notification system
+- Activity feed updates
+
+### Stripe Billing
+| Plan | Price | Features |
+|------|-------|---------|
+| Free | $0/mo | 10 clients, basic analytics |
+| Pro | $29/mo | 100 clients, advanced analytics, real-time |
+| Enterprise | $99/mo | Unlimited, full suite, dedicated support |
+
+## Project Structure
 
 ```
-bf-suma-next/
-├── app/                    # Next.js App Router pages
-│   ├── admin/              # Admin panel (manager role)
-│   │   ├── dashboard/      # Admin dashboard with command center
-│   │   ├── mfa/            # Multi-factor authentication setup
-│   │   └── settings/       # Platform settings & configuration
-│   ├── auth/               # Authentication (login/signup)
-│   │   └── callback/       # OAuth callback handler
-│   ├── client/             # Client dashboard
-│   │   └── analytics/      # Wellness analytics
-│   ├── distributor/        # Distributor dashboard
-│   │   └── dashboard/      # Sales & team management
-│   ├── marketing/          # Public marketing page
-│   ├── offline/            # Offline fallback page
-│   ├── tracking/           # Order tracking
-│   └── packages/           # Supplement packages (TBD)
-├── components/             # Reusable React components
-│   ├── admin-charts.tsx    # Lazy-loaded chart components
-│   ├── admin-command-center.tsx  # Admin command center
-│   ├── admin-layout.tsx    # Responsive admin layout wrapper
-│   ├── mobile-nav.tsx      # Mobile navigation (hamburger + bottom nav)
-│   ├── navbar.tsx          # Top navigation bar
-│   ├── nexusplatform.tsx   # Auth context provider
-│   └── sidebar.tsx         # Desktop sidebar navigation
-├── lib/                    # Utility libraries
-│   ├── auth.ts             # Centralized auth helpers & role routes
-│   ├── capacitor.ts        # Native platform detection
-│   ├── supabase-config.ts  # Supabase client factory
-│   └── supabaseServer.ts   # Server-side Supabase client
-├── public/                 # Static assets
-│   ├── manifest.json       # PWA manifest
-│   ├── sw.js               # Service worker
-│   └── icons/              # App icons (see README inside)
-├── emails/                 # Email templates
-├── store-metadata/         # App Store & Play Store listings
-├── capacitor.config.ts     # Capacitor native config
-├── middleware.ts           # Auth middleware with RBAC
-└── next.config.ts          # Next.js configuration
+app/
+├── admin/dashboard/     # Admin analytics dashboard
+├── distributor/
+│   ├── dashboard/       # Distributor overview
+│   ├── messages/        # Real-time chat
+│   └── location/        # GPS tracking
+├── client/
+│   ├── dashboard/       # Client overview
+│   ├── orders/          # Order tracking
+│   └── subscription/    # Stripe billing
+├── auth/                # Login/signup
+└── api/stripe/          # Checkout + webhook
+
+lib/
+├── supabase/            # Browser, server, middleware clients
+├── auth/                # Config, helpers
+├── stripe/              # Plan configuration
+└── utils/               # Format, validation
+
+services/                # Business logic (profiles, messages, activity)
+hooks/                   # useAuth, useRealtime
+types/                   # Shared TypeScript interfaces
+components/
+├── ui/                  # StatsCard, ActivityFeed, NotificationBell
+├── dashboard/           # Sidebar, DashboardLayout
+└── charts/              # RevenueTrendChart, OrdersBarChart
+supabase/
+└── schema.sql           # Full database schema with RLS
+docs/
+├── REPOSITORY_AUDIT.md  # Architecture audit
+└── DEPLOYMENT.md        # Deployment guide
 ```
 
-## 🔐 Role-Based Access Control
-
-| Role | Routes | Features |
-|------|--------|----------|
-| `manager` | `/admin/*` | Full admin panel, MFA required, settings, command center |
-| `distributor` | `/distributor/*` | Sales dashboard, team management, tracking |
-| `client` | `/client/*` | Wellness analytics, order tracking |
-
-## 🏁 Getting Started
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Supabase project (for auth & database)
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd bf-suma-next
-
 # Install dependencies
 npm install
 
-# Set up environment variables
+# Configure environment
 cp .env.example .env.local
-# Edit .env.local with your Supabase credentials
+# Edit .env.local with your Supabase and Stripe credentials
 
-# Run development server
+# Run database schema
+# Copy supabase/schema.sql → Supabase SQL Editor → Run
+
+# Start development server
 npm run dev
 ```
 
-### Environment Variables
+## Database Schema
 
-```
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+Tables: `profiles`, `distributors`, `clients`, `messages`, `activity_logs`, `distributor_locations`, `subscriptions`, `notifications`, `orders`
 
-## 📱 Mobile Deployment
+All tables have:
+- Row Level Security (RLS) enabled
+- Proper indexes for performance
+- Auto-updated `updated_at` timestamps
+- Realtime enabled for key tables
 
-### iOS (App Store)
+## Deployment
 
-```bash
-# Build for Capacitor
-npm run cap:build:ios
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full deployment instructions.
 
-# This will:
-# 1. Build Next.js as static export
-# 2. Sync with Capacitor
-# 3. Open Xcode
+## Environment Variables
 
-# In Xcode:
-# 1. Set your signing team
-# 2. Set bundle identifier: com.bfsuma.nexus
-# 3. Archive and upload to App Store Connect
-```
+See [.env.example](.env.example) for all required variables.
 
-### Android (Play Store)
+## Security
 
-```bash
-# Build for Capacitor
-npm run cap:build:android
-
-# This will:
-# 1. Build Next.js as static export
-# 2. Sync with Capacitor
-# 3. Open Android Studio
-
-# In Android Studio:
-# 1. Build > Generate Signed Bundle/APK
-# 2. Upload to Google Play Console
-```
-
-### PWA (Progressive Web App)
-
-The app is also installable as a PWA directly from the browser. Users can "Add to Home Screen" for an app-like experience without going through app stores.
-
-## 🛡️ Security Features
-
-- **Server-side auth validation** using `supabase.auth.getUser()` (not `getSession()`)
-- **Multi-factor authentication** (TOTP) for admin/manager role
-- **Role-based middleware** protecting all routes
-- **Content Security Policy** headers
-- **CORS restrictions** (no wildcard origins)
-- **Environment variable validation** with descriptive errors
-- **Generic error messages** (no internal details exposed to users)
-
-## 🎨 Responsive Design
-
-- **Mobile-first** approach with Tailwind CSS breakpoints
-- **Bottom navigation** for mobile users
-- **Slide-out sidebar** with touch gestures
-- **Dynamic viewport height** (`100dvh`) for mobile browser chrome
-- **44px minimum touch targets** for all interactive elements
-- **Safe area insets** for notched phones
-
-## 📊 Performance Optimizations
-
-- **Lazy-loaded charts** (Recharts loaded only when needed via `next/dynamic`)
-- **Optimized fonts** via `next/font/google` (self-hosted, no render-blocking)
-- **Memoized Supabase clients** (no re-creation on re-renders)
-- **Service worker caching** (network-first with offline fallback)
-- **Route-level code splitting** (automatic via Next.js App Router)
-
-## 🧪 Available Scripts
-
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production (Vercel) |
-| `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
-| `npm run cap:build` | Build static export + sync Capacitor |
-| `npm run cap:build:ios` | Build + open in Xcode |
-| `npm run cap:build:android` | Build + open in Android Studio |
-| `npm run cap:sync` | Sync web assets to native projects |
-
-## 📋 App Store Requirements Checklist
-
-### Apple App Store
-- [ ] App icons (all sizes in `public/icons/`)
-- [ ] Screenshots (6.7", 6.5", 5.5" iPhone + iPad)
-- [ ] Privacy policy URL
-- [ ] App description & keywords (see `store-metadata/`)
-- [ ] Age rating: 4+
-- [ ] Category: Health & Fitness
-
-### Google Play Store
-- [ ] App icons (512x512 hi-res)
-- [ ] Feature graphic (1024x500)
-- [ ] Screenshots (phone + tablet)
-- [ ] Privacy policy URL
-- [ ] App description (see `store-metadata/`)
-- [ ] Content rating: Everyone
-- [ ] Category: Health & Fitness
-
-## 📄 License
-
-Proprietary — BF Suma Nexus. All rights reserved.
+- Middleware-enforced role-based access control
+- Supabase RLS policies on all tables
+- Input validation and sanitization utilities
+- Stripe webhook signature verification
+- Service role key never exposed to client
+- CSP headers configured in `next.config.ts`

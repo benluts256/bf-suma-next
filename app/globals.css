@@ -1,0 +1,589 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BF SUMA NEXUS v6.0 — GLOBAL STYLES
+   File: app/globals.css
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@import "tailwindcss";
+
+/* ─── Role Selection Styles ───────────────────────────────────────────────────── */
+.role-selection-container {
+  width: 100%;
+}
+
+.role-selection-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-selection-grid .role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  text-align: left;
+  position: relative;
+}
+
+.role-selection-grid .role-card:hover {
+  border-color: var(--color-green-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(34, 139, 34, 0.15);
+}
+
+.role-selection-grid .role-card-selected {
+  border-color: var(--color-green-primary);
+  background: rgba(34, 139, 34, 0.05);
+}
+
+.role-selection-grid .role-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.role-selection-grid .role-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 4px 0;
+}
+
+.role-selection-grid .role-description {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0 0 10px 0;
+  line-height: 1.4;
+}
+
+.role-selection-grid .role-benefits {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-selection-grid .role-benefit {
+  font-size: 11px;
+  color: var(--color-green-primary);
+  background: rgba(34, 139, 34, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.role-selection-grid .role-checkmark {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  background: var(--color-green-primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* ─── Confirmation Styles ───────────────────────────────────────────────────────── */
+.confirmation-container {
+  text-align: center;
+  padding: 10px 0;
+}
+
+.confirmation-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, rgba(34, 139, 34, 0.1), rgba(34, 139, 34, 0.05));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmation-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 10px 0;
+}
+
+.confirmation-subtitle {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.confirmation-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-green-primary);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+}
+
+.confirmation-role-badge .role-badge-icon {
+  font-size: 18px;
+}
+
+.confirmation-role-badge .role-badge-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.confirmation-next-steps {
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.confirmation-next-steps .next-steps-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 12px 0;
+}
+
+.confirmation-next-steps .next-steps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.confirmation-next-steps .next-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.confirmation-next-steps .next-step-item:last-child {
+  margin-bottom: 0;
+}
+
+.confirmation-next-steps .next-step-check {
+  width: 18px;
+  height: 18px;
+  background: rgba(34, 139, 34, 0.15);
+  color: var(--color-green-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.confirmation-email-note {
+  background: rgba(34, 139, 34, 0.05);
+  border: 1px solid rgba(34, 139, 34, 0.15);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 20px;
+}
+
+.confirmation-email-note p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.confirmation-secondary-button {
+  flex: 1;
+  height: 46px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.confirmation-secondary-button:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.confirmation-actions .auth-button {
+  flex: 1;
+}
+
+/* ─── Auth Page Specific Styles ───────────────────────────────────────────────── */
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: 36px 32px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--color-border);
+}
+
+.auth-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--color-green-primary), var(--color-green-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin: 0 auto 14px;
+  box-shadow: 0 4px 20px rgba(34, 139, 34, 0.35);
+}
+
+.auth-input {
+  width: 100%;
+  height: 46px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  padding: 0 14px;
+  font-size: 14px;
+  outline: none;
+  color: var(--color-text);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.auth-input:focus {
+  border-color: var(--color-green-primary);
+  box-shadow: 0 0 0 3px rgba(34, 139, 34, 0.1);
+}
+
+.auth-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.auth-button {
+  height: 50px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: linear-gradient(135deg, var(--color-green-primary), var(--color-green-dark));
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.auth-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.auth-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.auth-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.auth-error {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.auth-error p {
+  font-size: 12.5px;
+  color: #ef4444;
+  margin: 0;
+}
+
+.auth-success {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.auth-success p {
+  font-size: 12.5px;
+  color: #16a34a;
+  margin: 0;
+}
+
+.auth-link {
+  color: var(--color-green-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color var(--transition-base);
+}
+
+.auth-link:hover {
+  color: var(--color-green-dark);
+  text-decoration: underline;
+}
+
+/* Password strength indicator */
+.password-strength {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.password-strength-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background-color var(--transition-base);
+}
+
+.password-strength-bar.weak { background: #ef4444; }
+.password-strength-bar.fair { background: #f59e0b; }
+.password-strength-bar.good { background: #22c55e; }
+.password-strength-bar.strong { background: #16a34a; }
+
+.password-strength-text {
+  font-size: 11px;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+}
+
+/* Loading spinner */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── CSS Variables ─────────────────────────────────────────────────────────── */
+:root {
+  /* ── Brand: Forest Green ── */
+  --color-green-primary:    #228B22;
+  --color-green-dark:       #1a3a1a;
+  --color-green-deeper:     #0f2410;
+
+  /* ── Brand: Gold ── */
+  --color-gold:             #D4AF37;
+  --color-gold-dark:        #b8941f;
+
+  /* ── Backgrounds & Surfaces ── */
+  --color-bg:               #fafaf9;
+  --color-surface:          #ffffff;
+
+  /* ── Borders ── */
+  --color-border:           #e0e0dc;
+
+  /* ── Typography ── */
+  --color-text:             #1a1a16;
+  --color-text-muted:       #888882;
+
+  /* ── Border Radius Scale ── */
+  --radius-sm:              8px;
+  --radius-md:              13px;
+  --radius-lg:              18px;
+  --radius-xl:              24px;
+
+  /* ── Avatar Defaults ── */
+  --avatar-size:            40px;
+  --avatar-font-size:       14.4px;
+  --avatar-bg:              var(--color-green-primary);
+
+  /* ── Transitions ── */
+  --transition-base:        150ms ease;
+  --transition-smooth:      250ms ease;
+
+  /* ── Focus Ring ── */
+  --focus-ring-color:       var(--color-green-primary);
+  --focus-ring-offset:      2px;
+  --focus-ring-width:       2px;
+}
+
+/* ─── Base Reset ─────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  /* Prevent margin/padding bleed without zeroing all UA defaults (Tailwind handles that) */
+}
+
+html {
+  font-size: 16px;               /* Explicit base for rem calculations */
+  -webkit-text-size-adjust: 100%; /* Prevent iOS font scaling on orientation change (Safari/Chrome) */
+  text-size-adjust: 100%;        /* Standard: Chrome 54+, Edge 79+, Samsung Internet 6.0+ */
+  /* Defer scroll-behavior to the reduced-motion query below */
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;            /* dvh: respects mobile browser chrome */
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-synthesis: none;          /* Prevent synthetic bold/italic when font lacks them */
+  text-rendering: optimizeSpeed; /* Favour paint speed over kerning on body copy */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Images / Media ─────────────────────────────────────────────────────────── */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;               /* Prevent overflow on small viewports */
+}
+
+/* ─── Form Elements ──────────────────────────────────────────────────────────── */
+input,
+button,
+textarea,
+select {
+  font: inherit;                 /* Browsers don't inherit font on form controls by default */
+}
+
+/* ─── Scrollbar (Chromium / WebKit) ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 99px;
+  transition: background var(--transition-base);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* Firefox / Chromium 121+ scrollbar — progressive enhancement */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  }
+}
+
+/* ─── Focus Visible ──────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: 4px;
+}
+
+/* Remove focus ring for mouse/touch interactions */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ─── Text Selection ─────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(34, 139, 34, 0.18);
+  color: var(--color-text);
+}
+
+/* ─── Motion / Animation ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Colour Scheme ──────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Override surfaces for dark-mode without a separate theme switcher */
+    --color-bg:          #0f1a0f;
+    --color-surface:     #162216;
+    --color-border:      #2a3a2a;
+    --color-text:        #e8e8e2;
+    --color-text-muted:  #9a9a94;
+  }
+}
+
+/* ─── Avatar Component ───────────────────────────────────────────────────────── */
+/**
+ * Usage:
+ *   <div class="avatar" style="--avatar-size:48px; --avatar-bg:#1a3a1a;">…</div>
+ * Customisable via inline CSS custom properties.
+ */
+.avatar {
+  --_size: var(--avatar-size, 40px);   /* Local alias for re-use */
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--_size);
+  height: var(--_size);
+  min-width: var(--_size);             /* Prevent flex-shrink squashing */
+  background-color: var(--avatar-bg, var(--color-green-primary));
+  border-radius: 50%;
+  font-size: var(--avatar-font-size, 14.4px);
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;                    /* Clip child <img> to circle */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Subtle ring to distinguish avatar from backgrounds */
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
+/* ─── Utility: Visually Hidden (Accessible) ──────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

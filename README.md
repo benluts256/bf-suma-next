@@ -123,7 +123,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full deployment instructions.
 
 See [.env.example](.env.example) for all required variables.
 
-## Security
+##   Securities
 
 - Middleware-enforced role-based access control
 - Supabase RLS policies on all tables
@@ -131,3 +131,4 @@ See [.env.example](.env.example) for all required variables.
 - Stripe webhook signature verification
 - Service role key never exposed to client
 - CSP headers configured in `next.config.ts`
+                                                                                                                                                                                                                                                                                                       

@@ -123,7 +123,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full deployment instructions.
 
 See [.env.example](.env.example) for all required variables.
 
-## Security
+##   Security
 
 - Middleware-enforced role-based access control
 - Supabase RLS policies on all tables

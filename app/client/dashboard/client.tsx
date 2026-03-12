@@ -12,7 +12,7 @@ import {
 import { DashboardLayout } from '@/components/dashboard/layout';
 import { StatsCard } from '@/components/ui/stats-card';
 import { formatUGX, timeAgo } from '@/lib/utils/format';
-import type { Profile, Subscription } from '@/types';
+import type { Profile } from '@/types';
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
@@ -21,7 +21,6 @@ const NAV_ITEMS = [
   { href: '/client/orders', label: 'My Orders', icon: <Package className="w-4 h-4" /> },
   { href: '/client/analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
   { href: '/client/messages', label: 'Messages', icon: <MessageSquare className="w-4 h-4" /> },
-  { href: '/client/subscription', label: 'Subscription', icon: <CreditCard className="w-4 h-4" /> },
 ];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -54,7 +53,6 @@ interface ClientDashboardClientProps {
   profile: Profile;
   clientRecord: ClientRecord | null;
   recentOrders: Order[];
-  subscription: Subscription | null;
 }
 
 // ── Order status icon ─────────────────────────────────────────────────────────
@@ -72,20 +70,6 @@ function OrderStatusIcon({ status }: { status: string }) {
   }
 }
 
-// ── Plan badge ────────────────────────────────────────────────────────────────
-
-function PlanBadge({ plan }: { plan: string }) {
-  const styles: Record<string, string> = {
-    free: 'bg-zinc-100 text-zinc-600',
-    pro: 'bg-emerald-100 text-emerald-700',
-    enterprise: 'bg-purple-100 text-purple-700',
-  };
-  return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${styles[plan] ?? styles.free}`}>
-      {plan}
-    </span>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -95,7 +79,6 @@ export function ClientDashboardClient({
   profile,
   clientRecord,
   recentOrders,
-  subscription,
 }: ClientDashboardClientProps) {
   return (
     <DashboardLayout
@@ -118,14 +101,9 @@ export function ClientDashboardClient({
               )}
             </div>
             <div className="text-right">
-              {subscription && <PlanBadge plan={subscription.plan} />}
-              {subscription?.plan !== 'free' && (
-                <p className="text-xs text-emerald-100 mt-1">
-                  Renews {subscription?.current_period_end
-                    ? new Date(subscription.current_period_end).toLocaleDateString()
-                    : '—'}
-                </p>
-              )}
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                Active Client
+              </span>
             </div>
           </div>
         </div>
@@ -207,21 +185,6 @@ export function ClientDashboardClient({
           )}
         </div>
 
-        {/* Subscription upgrade CTA (for free plan) */}
-        {(!subscription || subscription.plan === 'free') && (
-          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl p-5 text-white">
-            <h3 className="font-bold text-base">Upgrade to Pro</h3>
-            <p className="text-purple-100 text-sm mt-1">
-              Get advanced analytics, real-time tracking, and priority support.
-            </p>
-            <a
-              href="/client/subscription"
-              className="inline-block mt-3 bg-white text-purple-700 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-purple-50 transition-colors"
-            >
-              View Plans →
-            </a>
-          </div>
-        )}
       </div>
     </DashboardLayout>
   );

@@ -5,10 +5,8 @@
 
 // ── Roles & Auth ──────────────────────────────────────────────────────────────
 
-export type AppRole = 'admin' | 'distributor' | 'client';
+export type AppRole = 'manager' | 'distributor' | 'client';
 
-export type SubscriptionPlan = 'free' | 'pro' | 'enterprise';
-export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
 
 export type MessageType = 'text' | 'image' | 'system';
 
@@ -54,20 +52,37 @@ export interface Distributor {
 }
 
 export interface Client {
-  id: string;
-  profile_id: string;
-  distributor_id: string | null;
-  shipping_address: string | null;
-  total_orders: number;
-  total_spent: number;
-  last_order_at: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  // Joined fields
-  profile?: Profile;
-  distributor?: Distributor;
-}
+   id: string;
+   profile_id: string;
+   distributor_id: string | null;
+   shipping_address: string | null;
+   total_orders: number;
+   total_spent: number;
+   last_order_at: string | null;
+   notes: string | null;
+   created_at: string;
+   updated_at: string;
+   // Joined fields
+   profile?: Profile;
+   distributor?: Distributor;
+ }
+
+export interface ClientInvite {
+   id: string;
+   distributor_id: string;
+   email: string;
+   token: string;
+   status: 'pending' | 'accepted' | 'expired';
+   expires_at: string;
+   accepted_at: string | null;
+   client_id: string | null;
+   metadata: Record<string, unknown>;
+   created_at: string;
+   updated_at: string;
+   // Joined fields
+   distributor?: Distributor;
+   client?: Client;
+ }
 
 export interface Message {
   id: string;
@@ -110,24 +125,6 @@ export interface DistributorLocation {
   created_at: string;
   // Joined fields
   distributor?: Distributor;
-}
-
-export interface Subscription {
-  id: string;
-  profile_id: string;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  plan: SubscriptionPlan;
-  status: SubscriptionStatus;
-  current_period_start: string | null;
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
-  canceled_at: string | null;
-  trial_start: string | null;
-  trial_end: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Notification {
@@ -184,23 +181,6 @@ export interface ToastMessage {
   type: 'success' | 'error' | 'info' | 'warning';
 }
 
-// ── Stripe Types ──────────────────────────────────────────────────────────────
-
-export interface PlanConfig {
-  id: SubscriptionPlan;
-  name: string;
-  description: string;
-  price: number;
-  priceId: string;
-  features: string[];
-  limits: {
-    clients: number;
-    messages: number;
-    analytics: boolean;
-    realtime: boolean;
-    priority_support: boolean;
-  };
-}
 
 // ── API Response Types ────────────────────────────────────────────────────────
 

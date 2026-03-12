@@ -9,19 +9,10 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── Custom types ──────────────────────────────────────────────────────────────
 DO $$ BEGIN
-  CREATE TYPE app_role AS ENUM ('admin', 'distributor', 'client');
+   CREATE TYPE app_role AS ENUM ('manager', 'distributor', 'client');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-DO $$ BEGIN
-  CREATE TYPE subscription_status AS ENUM ('active', 'trialing', 'past_due', 'canceled', 'incomplete');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE subscription_plan AS ENUM ('free', 'pro', 'enterprise');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
 DO $$ BEGIN
   CREATE TYPE message_type AS ENUM ('text', 'image', 'system');
@@ -103,7 +94,29 @@ CREATE INDEX IF NOT EXISTS idx_clients_profile ON clients(profile_id);
 CREATE INDEX IF NOT EXISTS idx_clients_distributor ON clients(distributor_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 4. MESSAGES — Real-time messaging between users
+-- 4. CLIENT_INVITES — Client invitation system
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS client_invites (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  distributor_id  UUID NOT NULL REFERENCES distributors(id) ON DELETE CASCADE,
+  email           TEXT NOT NULL,
+  token           TEXT UNIQUE NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired')),
+  expires_at      TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '7 days'),
+  accepted_at     TIMESTAMPTZ,
+  client_id       UUID REFERENCES clients(id) ON DELETE SET NULL,
+  metadata        JSONB DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_invites_distributor ON client_invites(distributor_id);
+CREATE INDEX IF NOT EXISTS idx_client_invites_email ON client_invites(email);
+CREATE INDEX IF NOT EXISTS idx_client_invites_token ON client_invites(token);
+CREATE INDEX IF NOT EXISTS idx_client_invites_status ON client_invites(status);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 5. MESSAGES — Real-time messaging between users
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS messages (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -165,33 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_dist_locations_online ON distributor_locations(is
 CREATE INDEX IF NOT EXISTS idx_dist_locations_last_seen ON distributor_locations(last_seen_at DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 7. SUBSCRIPTIONS — Stripe subscription tracking
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS subscriptions (
-  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  profile_id            UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  stripe_customer_id    TEXT UNIQUE,
-  stripe_subscription_id TEXT UNIQUE,
-  plan                  subscription_plan NOT NULL DEFAULT 'free',
-  status                subscription_status NOT NULL DEFAULT 'active',
-  current_period_start  TIMESTAMPTZ,
-  current_period_end    TIMESTAMPTZ,
-  cancel_at_period_end  BOOLEAN NOT NULL DEFAULT false,
-  canceled_at           TIMESTAMPTZ,
-  trial_start           TIMESTAMPTZ,
-  trial_end             TIMESTAMPTZ,
-  metadata              JSONB DEFAULT '{}',
-  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_subscriptions_profile ON subscriptions(profile_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_customer ON subscriptions(stripe_customer_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_sub ON subscriptions(stripe_subscription_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- 8. NOTIFICATIONS — In-app notification system
+-- 6. NOTIFICATIONS — In-app notification system
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS notifications (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -263,8 +250,8 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE TRIGGER subscriptions_updated_at BEFORE UPDATE ON subscriptions
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+   CREATE TRIGGER client_invites_updated_at BEFORE UPDATE ON client_invites
+     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -275,44 +262,76 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- FUNCTION — Handle client invite acceptance
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION accept_client_invite(_invite_token TEXT, _client_id UUID)
+RETURNS VOID AS $$
+DECLARE
+  _invite_record RECORD;
+BEGIN
+  -- Find the invite
+  SELECT * INTO _invite_record
+  FROM client_invites
+  WHERE token = _invite_token AND status = 'pending' AND expires_at > now();
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Invalid or expired invite token';
+  END IF;
+
+  -- Update invite status
+  UPDATE client_invites
+  SET status = 'accepted', accepted_at = now(), client_id = _client_id
+  WHERE id = _invite_record.id;
+
+  -- Link client to distributor
+  UPDATE clients
+  SET distributor_id = _invite_record.distributor_id
+  WHERE id = _client_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- FUNCTION — Auto-create profile on user signup
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
-  _role app_role;
-  _profile_id UUID;
+   _role app_role;
+   _profile_id UUID;
+   _client_id UUID;
 BEGIN
-  -- Get role from user metadata, default to 'client'
-  _role := COALESCE(
-    (NEW.raw_user_meta_data->>'role')::app_role,
-    'client'
-  );
+   -- Get role from user metadata, default to 'client'
+   _role := COALESCE(
+     (NEW.raw_user_meta_data->>'role')::app_role,
+     'client'
+   );
 
-  -- Create profile
-  INSERT INTO profiles (auth_user_id, role, full_name, email)
-  VALUES (
-    NEW.id,
-    _role,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
-    NEW.email
-  )
-  RETURNING id INTO _profile_id;
+   -- Create profile
+   INSERT INTO profiles (auth_user_id, role, full_name, email)
+   VALUES (
+     NEW.id,
+     _role,
+     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+     NEW.email
+   )
+   RETURNING id INTO _profile_id;
 
-  -- Create role-specific record
-  IF _role = 'distributor' THEN
-    INSERT INTO distributors (profile_id, distributor_code)
-    VALUES (_profile_id, 'DST-' || substr(md5(random()::text), 1, 8));
-  ELSIF _role = 'client' THEN
-    INSERT INTO clients (profile_id)
-    VALUES (_profile_id);
-  END IF;
+   -- Create role-specific record
+   IF _role = 'distributor' THEN
+     INSERT INTO distributors (profile_id, distributor_code)
+     VALUES (_profile_id, 'DST-' || substr(md5(random()::text), 1, 8));
+   ELSIF _role = 'client' THEN
+     INSERT INTO clients (profile_id)
+     VALUES (_profile_id)
+     RETURNING id INTO _client_id;
 
-  -- Create free subscription
-  INSERT INTO subscriptions (profile_id, plan, status)
-  VALUES (_profile_id, 'free', 'active');
+     -- Handle client invite if token provided
+     IF NEW.raw_user_meta_data->>'invite_token' IS NOT NULL THEN
+       PERFORM accept_client_invite(NEW.raw_user_meta_data->>'invite_token', _client_id);
+     END IF;
+   END IF;
 
-  RETURN NEW;
+   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -333,7 +352,7 @@ ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE distributor_locations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE client_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
@@ -342,14 +361,14 @@ CREATE POLICY "Users can view own profile"
   ON profiles FOR SELECT
   USING (auth.uid() = auth_user_id);
 
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p
-      WHERE p.auth_user_id = auth.uid() AND p.role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can view all profiles"
+   ON profiles FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles p
+       WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'
+     )
+   );
 
 CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
@@ -365,21 +384,21 @@ CREATE POLICY "Distributors can view own record"
     )
   );
 
-CREATE POLICY "Admins can view all distributors"
-  ON distributors FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can view all distributors"
+   ON distributors FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
-CREATE POLICY "Admins can update distributors"
-  ON distributors FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can update distributors"
+   ON distributors FOR UPDATE
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
 -- ── Clients ───────────────────────────────────────────────────────────────────
 CREATE POLICY "Clients can view own record"
@@ -400,13 +419,13 @@ CREATE POLICY "Distributors can view assigned clients"
     )
   );
 
-CREATE POLICY "Admins can view all clients"
-  ON clients FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can view all clients"
+   ON clients FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
 -- ── Messages ──────────────────────────────────────────────────────────────────
 CREATE POLICY "Users can view own messages"
@@ -435,13 +454,13 @@ CREATE POLICY "Users can view own activity"
     user_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
   );
 
-CREATE POLICY "Admins can view all activity"
-  ON activity_logs FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can view all activity"
+   ON activity_logs FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
 CREATE POLICY "System can insert activity logs"
   ON activity_logs FOR INSERT
@@ -458,28 +477,42 @@ CREATE POLICY "Distributors can update own location"
     )
   );
 
-CREATE POLICY "Admins can view all locations"
-  ON distributor_locations FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Managers can view all locations"
+   ON distributor_locations FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
--- ── Subscriptions ─────────────────────────────────────────────────────────────
-CREATE POLICY "Users can view own subscription"
-  ON subscriptions FOR SELECT
-  USING (
-    profile_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+-- ── Client Invites ────────────────────────────────────────────────────────────
+CREATE POLICY "Distributors can view own invites"
+   ON client_invites FOR SELECT
+   USING (
+     distributor_id IN (
+       SELECT d.id FROM distributors d
+       JOIN profiles p ON p.id = d.profile_id
+       WHERE p.auth_user_id = auth.uid()
+     )
+   );
 
-CREATE POLICY "Admins can view all subscriptions"
-  ON subscriptions FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Distributors can create invites"
+   ON client_invites FOR INSERT
+   WITH CHECK (
+     distributor_id IN (
+       SELECT d.id FROM distributors d
+       JOIN profiles p ON p.id = d.profile_id
+       WHERE p.auth_user_id = auth.uid()
+     )
+   );
+
+CREATE POLICY "Managers can view all invites"
+   ON client_invites FOR SELECT
+   USING (
+     EXISTS (
+       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
+     )
+   );
 
 -- ── Notifications ─────────────────────────────────────────────────────────────
 CREATE POLICY "Users can view own notifications"
@@ -532,5 +565,6 @@ CREATE POLICY "Admins can view all orders"
 -- ═══════════════════════════════════════════════════════════════════════════════
 ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+ALTER PUBLICATION supabase_realtime ADD TABLE client_invites;
 ALTER PUBLICATION supabase_realtime ADD TABLE distributor_locations;
 ALTER PUBLICATION supabase_realtime ADD TABLE activity_logs;

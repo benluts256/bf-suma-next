@@ -20,11 +20,12 @@ export function Sidebar({ profile, navItems, onSignOut, brandLabel }: SidebarPro
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + '/');
 
-  const roleLabel = brandLabel ?? {
-    admin: 'Command Center',
-    distributor: 'Distributor Portal',
-    client: 'Client Portal',
-  }[profile.role] ?? 'Portal';
+  const roleLabel = brandLabel ?? (
+    profile.role === 'manager' ? 'Command Center' :
+    profile.role === 'distributor' ? 'Distributor Portal' :
+    profile.role === 'client' ? 'Client Portal' :
+    'Portal'
+  );
 
   return (
     <aside className="hidden md:flex md:w-[240px] flex-shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 h-[100dvh]">

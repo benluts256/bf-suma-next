@@ -67,6 +67,7 @@ export async function requireAuth(supabase: SupabaseClient) {
 
 /**
  * Require a specific role — returns null if user doesn't have the role.
+ * Also includes role-specific data (distributor/client) if applicable.
  */
 export async function requireRole(
   supabase: SupabaseClient,
@@ -75,7 +76,28 @@ export async function requireRole(
   const auth = await requireAuth(supabase);
   if (!auth) return null;
   if (auth.profile.role !== requiredRole) return null;
-  return auth;
+
+  // Fetch role-specific data
+  let distributor = null;
+  let client = null;
+
+  if (requiredRole === 'distributor') {
+    const { data } = await supabase
+      .from('distributors')
+      .select('*')
+      .eq('profile_id', auth.profile.id)
+      .single();
+    distributor = data;
+  } else if (requiredRole === 'client') {
+    const { data } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('profile_id', auth.profile.id)
+      .single();
+    client = data;
+  }
+
+  return { user: auth.user, profile: auth.profile, distributor, client };
 }
 
 /**

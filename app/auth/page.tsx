@@ -35,6 +35,12 @@ interface RoleOption {
   benefits: string[];
 }
 
+interface SignupData {
+  email: string;
+  role: UserRole;
+  invite_token?: string;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -109,6 +115,7 @@ function AuthPageContent() {
   const next = (rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : "/";
   const errorParam = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
+  const inviteToken = searchParams.get("invite");
 
   // Form state
   const [email, setEmail] = useState("");
@@ -141,9 +148,10 @@ function AuthPageContent() {
   // Subtitle based on mode
   const subtitleText = useMemo(() => {
     if (isConfirmation) return "Your account has been created successfully";
+    if (isSignup && inviteToken) return "Complete your client account setup";
     if (isSignup) return "Select how you want to use BF Suma Nexus";
     return "Enter your credentials to access your account";
-  }, [isSignup, isConfirmation]);
+  }, [isSignup, isConfirmation, inviteToken]);
 
   // Validation errors (only show after field is touched)
   const errors: FormErrors = useMemo(() => ({
@@ -215,15 +223,23 @@ function AuthPageContent() {
         router.refresh();
       } else {
         // Sign up with role
+        const signupData: SignupData = {
+          email: email.trim(),
+          role: selectedRole || 'client'
+        };
+
+        // If invite token is present, force role to client and include token
+        if (inviteToken) {
+          signupData.role = 'client';
+          signupData.invite_token = inviteToken;
+        }
+
         const { error: signUpErr, data } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { 
+          options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
-            data: { 
-              email: email.trim(),
-              role: selectedRole || 'client'
-            }
+            data: signupData
           },
         });
 
@@ -424,7 +440,7 @@ function AuthPageContent() {
         {/* Render based on mode */}
         {isConfirmation ? (
           renderConfirmation()
-        ) : isSignup && !selectedRole ? (
+        ) : isSignup && !selectedRole && !inviteToken ? (
           renderRoleSelection()
         ) : (
           <>

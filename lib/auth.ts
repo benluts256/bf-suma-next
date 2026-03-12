@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ── Role types ────────────────────────────────────────────────────────────────
 
-export type AppRole = "admin" | "manager" | "distributor" | "client";
+export type AppRole = "manager" | "distributor" | "client";
 
 // ── Role → dashboard route mapping (single source of truth) ──────────────────
 
@@ -40,24 +40,23 @@ export async function getAuthUser(supabase: SupabaseClient) {
 }
 
 /**
- * Queries the `user_roles` table for the given user's active role.
- * Returns the role string or `null` if no role is found.
+ * Queries the `profiles` table for the given user's role.
+ * Returns the role string or `null` if no profile is found.
  */
 export async function getUserRole(
   supabase: SupabaseClient,
   userId: string
 ): Promise<AppRole | null> {
-  const { data: roleRow, error } = await supabase
-    .from("user_roles")
+  const { data: profile, error } = await supabase
+    .from("profiles")
     .select("role")
     .eq("auth_user_id", userId)
-    .eq("is_active", true)
     .single();
 
-  if (error || !roleRow) {
-    console.error("[auth] getUserRole error:", error?.message ?? "no role row");
+  if (error || !profile) {
+    console.error("[auth] getUserRole error:", error?.message ?? "no profile");
     return null;
   }
 
-  return roleRow.role as AppRole;
+  return profile.role as AppRole;
 }

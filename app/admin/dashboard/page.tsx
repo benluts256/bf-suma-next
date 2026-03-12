@@ -46,7 +46,7 @@ function generateTrendData() {
 
 export default async function AdminDashboardPage() {
   const supabase = await getSupabaseServerClient();
-  const auth = await requireRole(supabase, 'admin');
+  const auth = await requireRole(supabase, 'manager');
 
   if (!auth) redirect('/auth?error=unauthorized');
 

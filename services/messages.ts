@@ -6,6 +6,61 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Message } from '@/types';
 
+// Check if two profiles are allowed to message each other
+async function checkMessagingPermission(
+  supabase: SupabaseClient,
+  senderId: string,
+  receiverId: string
+): Promise<boolean> {
+  // Get sender and receiver profiles with roles
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .in('id', [senderId, receiverId]);
+
+  if (!profiles || profiles.length !== 2) return false;
+
+  const sender = profiles.find(p => p.id === senderId);
+  const receiver = profiles.find(p => p.id === receiverId);
+
+  if (!sender || !receiver) return false;
+
+  // Clients can only message distributors
+  if (sender.role === 'client') {
+    if (receiver.role !== 'distributor') return false;
+
+    // Check if client is assigned to this distributor
+    const { data: client } = await supabase
+      .from('clients')
+      .select('distributor_id')
+      .eq('profile_id', senderId)
+      .single();
+
+    return client?.distributor_id === receiverId;
+  }
+
+  // Distributors can only message their clients
+  if (sender.role === 'distributor') {
+    if (receiver.role !== 'client') return false;
+
+    // Check if receiver is assigned to this distributor
+    const { data: client } = await supabase
+      .from('clients')
+      .select('distributor_id')
+      .eq('profile_id', receiverId)
+      .single();
+
+    return client?.distributor_id === senderId;
+  }
+
+  // Managers can message anyone (for admin purposes)
+  if (sender.role === 'manager') {
+    return true;
+  }
+
+  return false;
+}
+
 export async function getConversation(
   supabase: SupabaseClient,
   profileId: string,
@@ -32,6 +87,12 @@ export async function sendMessage(
   content: string,
   messageType: 'text' | 'image' | 'system' = 'text'
 ): Promise<Message | null> {
+  // Check if sender and receiver are allowed to message each other
+  const canMessage = await checkMessagingPermission(supabase, senderId, receiverId);
+  if (!canMessage) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('messages')
     .insert({

@@ -26,7 +26,6 @@ export default async function ClientDashboardPage() {
   const [
     { data: clientRecord },
     { data: recentOrders },
-    { data: subscription },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -39,11 +38,6 @@ export default async function ClientDashboardPage() {
       .eq('client_id', auth.profile.id)
       .order('created_at', { ascending: false })
       .limit(5),
-    supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('profile_id', auth.profile.id)
-      .single(),
   ]);
 
   return (
@@ -51,7 +45,6 @@ export default async function ClientDashboardPage() {
       profile={auth.profile}
       clientRecord={clientRecord}
       recentOrders={recentOrders ?? []}
-      subscription={subscription}
     />
   );
 }

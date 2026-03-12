@@ -19,6 +19,7 @@ import type { Profile, Distributor } from '@/types';
 const NAV_ITEMS = [
   { href: '/distributor/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
   { href: '/distributor/clients', label: 'My Clients', icon: <Users className="w-4 h-4" /> },
+  { href: '/distributor/invite', label: 'Invite Clients', icon: <Users className="w-4 h-4" /> },
   { href: '/distributor/orders', label: 'Orders', icon: <Package className="w-4 h-4" /> },
   { href: '/distributor/messages', label: 'Messages', icon: <MessageSquare className="w-4 h-4" /> },
   { href: '/distributor/location', label: 'Location', icon: <MapPin className="w-4 h-4" /> },

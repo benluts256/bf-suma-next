@@ -8,14 +8,14 @@ import type { AppRole } from '@/types';
 
 /** Role → default dashboard route mapping */
 export const ROLE_ROUTES: Record<string, string> = {
-  admin:       '/admin/dashboard',
+  manager:     '/admin/dashboard',
   distributor: '/distributor/dashboard',
-  client:      '/client/dashboard',
+  client:      '/client/analytics',
 };
 
 /** Route prefix → required role mapping */
 export const PROTECTED_PREFIXES: Record<string, string> = {
-  '/admin':       'admin',
+  '/admin':       'manager',
   '/distributor': 'distributor',
   '/client':      'client',
 };

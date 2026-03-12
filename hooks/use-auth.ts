@@ -107,7 +107,7 @@ export function useAuth() {
     ...state,
     signOut,
     redirectToDashboard,
-    isAdmin: state.profile?.role === 'admin',
+    isManager: state.profile?.role === 'manager',
     isDistributor: state.profile?.role === 'distributor',
     isClient: state.profile?.role === 'client',
   };

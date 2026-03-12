@@ -131,3 +131,4 @@ See [.env.example](.env.example) for all required variables.
 - Stripe webhook signature verification
 - Service role key never exposed to client
 - CSP headers configured in `next.config.ts`
+                                                                                                                                                                                                                                                                                                       

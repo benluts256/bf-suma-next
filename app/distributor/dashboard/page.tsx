@@ -21,6 +21,7 @@ export default async function DistributorDashboardPage() {
   const auth = await requireRole(supabase, 'distributor');
 
   if (!auth) redirect('/auth?error=unauthorized');
+  if (!auth.distributor) redirect('/auth?error=profile_not_found');
 
   // Fetch distributor-specific data
   const [
@@ -37,13 +38,13 @@ export default async function DistributorDashboardPage() {
     supabase
       .from('clients')
       .select('*, profile:profiles(full_name, email, avatar_url)')
-      .eq('distributor_id', auth.profile.id)
+      .eq('distributor_id', auth.distributor.id)
       .order('created_at', { ascending: false })
       .limit(10),
     supabase
       .from('orders')
       .select('*, client:clients(profile:profiles(full_name, email))')
-      .eq('distributor_id', auth.profile.id)
+      .eq('distributor_id', auth.distributor.id)
       .order('created_at', { ascending: false })
       .limit(5),
     supabase

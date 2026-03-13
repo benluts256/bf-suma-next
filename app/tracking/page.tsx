@@ -6,8 +6,12 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
-import { createBrowserClient } from "@/lib/supabase-config";
+import { useMemo } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation } from "@tanstack/react-query";
+import type { ApiResult } from "@/lib/api/result";
+import { orderTrackSchema, type OrderTrackInput } from "@/lib/schemas/orders";
 
 interface OrderData {
   id: string;
@@ -19,63 +23,47 @@ interface OrderData {
   shipping_address: string | null;
 }
 
-interface TrackingResult {
-  order: OrderData | null;
-  error: string | null;
-}
-
 export default function TrackingPage() {
-  const [orderId, setOrderId] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<TrackingResult>({ order: null, error: null });
+  const form = useForm<OrderTrackInput>({
+    resolver: zodResolver(orderTrackSchema),
+    defaultValues: { orderId: "" },
+  });
+  const orderIdValue = useWatch({ control: form.control, name: "orderId" });
 
-  const supabase = useMemo(() => createBrowserClient(), []);
-
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orderId.trim()) return;
-    
-    setLoading(true);
-    setResult({ order: null, error: null });
-
-    try {
-      // Query orders table for the given order ID
-      const { data, error } = await supabase
-        .from("orders")
-        .select("id, status, estimated_delivery, created_at, total_amount, items_count, shipping_address")
-        .eq("id", orderId.trim())
-        .single();
-
-      if (error || !data) {
-        setResult({
-          order: null,
-          error: "Order not found. Please check your order ID and try again."
-        });
-        return;
+  const trackMutation = useMutation({
+    mutationFn: async (input: OrderTrackInput) => {
+      const res = await fetch("/api/orders/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const json = (await res.json()) as ApiResult<{ order: OrderData }>;
+      return { res, json };
+    },
+    onSuccess: ({ res, json }) => {
+      if (!res.ok || json.ok === false) {
+        if (json.ok === false && json.error.code === "VALIDATION_ERROR" && json.error.fieldErrors?.orderId?.[0]) {
+          form.setError("orderId", { type: "server", message: json.error.fieldErrors.orderId[0] });
+          return;
+        }
+        form.setError("orderId", { type: "server", message: json.ok === false ? json.error.message : "Unable to track order" });
       }
+    },
+    onError: () => {
+      form.setError("orderId", { type: "server", message: "An unexpected error occurred. Please try again later." });
+    },
+  });
 
-      setResult({
-        order: {
-          id: data.id,
-          status: data.status || "Processing",
-          estimated_delivery: data.estimated_delivery,
-          created_at: data.created_at,
-          total_amount: data.total_amount || 0,
-          items_count: data.items_count || 0,
-          shipping_address: data.shipping_address
-        },
-        error: null
-      });
-    } catch (err) {
-      console.error("Tracking error:", err);
-      setResult({
-        order: null,
-        error: "An unexpected error occurred. Please try again later."
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const result = useMemo(() => {
+    const json = trackMutation.data?.json;
+    if (!json) return { order: null as OrderData | null, error: null as string | null };
+    if (json.ok === false) return { order: null, error: json.error.message };
+    return { order: json.data.order, error: null };
+  }, [trackMutation.data]);
+
+  const handleTrack = form.handleSubmit(async (values) => {
+    await trackMutation.mutateAsync(values);
+  });
 
   const getStatusColor = (status: string) => {
     const statusLower = status.toLowerCase();
@@ -122,18 +110,17 @@ export default function TrackingPage() {
           <div className="flex gap-2">
             <input
               type="text"
-              value={orderId}
-              onChange={e => setOrderId(e.target.value)}
+              {...form.register("orderId")}
               placeholder="e.g., ORD-12345"
               className="flex-1 h-12 px-4 rounded-xl border border-zinc-300 focus:border-[#228B22] focus:outline-none"
-              disabled={loading}
+              disabled={trackMutation.isPending}
             />
             <button
               type="submit"
-              disabled={loading || !orderId.trim()}
+              disabled={trackMutation.isPending || !orderIdValue?.trim()}
               className="h-12 px-6 bg-[#228B22] text-white font-semibold rounded-xl hover:bg-[#1a6b1a] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? (
+              {trackMutation.isPending ? (
                 <span className="flex items-center gap-2">
                   <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -144,6 +131,9 @@ export default function TrackingPage() {
               ) : "Track"}
             </button>
           </div>
+          {form.formState.errors.orderId?.message && (
+            <p className="mt-2 text-sm text-red-700">{form.formState.errors.orderId.message}</p>
+          )}
         </form>
 
         {/* Error Message */}
@@ -225,7 +215,7 @@ export default function TrackingPage() {
         )}
 
         {/* Help text */}
-        {!result.order && !result.error && !loading && (
+        {!result.order && !result.error && !trackMutation.isPending && (
           <div className="text-center mt-8 text-sm text-zinc-400">
             <p>Don&apos;t know your order ID?</p>
             <p className="mt-1">Check your confirmation email for the order details.</p>

@@ -6,9 +6,12 @@
 
 "use client";
 
-import { useState, Suspense, useCallback, useMemo, FormEvent } from "react";
+import { useState, Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase-config";
+import { useForm, useWatch } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -16,11 +19,6 @@ import { createBrowserClient } from "@/lib/supabase-config";
 
 type AuthMode = "login" | "signup" | "confirmation";
 type UserRole = "distributor" | "client" | "manager";
-
-interface FormErrors {
-  email?: string;
-  password?: string;
-}
 
 interface PasswordStrength {
   score: number; // 0-4
@@ -46,7 +44,6 @@ interface SignupData {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PASSWORD_MIN_LENGTH = 8;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const ROLE_OPTIONS: RoleOption[] = [
   {
@@ -76,19 +73,18 @@ const ROLE_OPTIONS: RoleOption[] = [
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function validateEmail(email: string): string | undefined {
-  if (!email.trim()) return "Email is required";
-  if (!EMAIL_REGEX.test(email)) return "Please enter a valid email address";
-  return undefined;
-}
+const loginSchema = z.object({
+  email: z.string().trim().min(1, "Email is required").email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+});
 
-function validatePassword(password: string, isSignup: boolean): string | undefined {
-  if (!password) return "Password is required";
-  if (isSignup && password.length < PASSWORD_MIN_LENGTH) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
-  }
-  return undefined;
-}
+const signupSchema = z.object({
+  email: z.string().trim().min(1, "Email is required").email("Please enter a valid email address"),
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`),
+});
 
 function calculatePasswordStrength(password: string): PasswordStrength {
   let score = 0;
@@ -117,20 +113,24 @@ function AuthPageContent() {
   const errorDescription = searchParams.get("error_description");
   const inviteToken = searchParams.get("invite");
 
-  // Form state
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(errorDescription || null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [mode, setMode] = useState<AuthMode>("login");
-  const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [confirmedEmail, setConfirmedEmail] = useState<string>("");
 
   // Create Supabase client once with useMemo
   const supabase = useMemo(() => createBrowserClient(), []);
+
+  const schema = mode === "login" ? loginSchema : signupSchema;
+  const form = useForm<{ email: string; password: string }>({
+    resolver: zodResolver(schema),
+    defaultValues: { email: "", password: "" },
+    mode: "onSubmit",
+  });
+  const password = useWatch({ control: form.control, name: "password" });
 
   // Derived state
   const isSignup = mode === "signup";
@@ -153,47 +153,13 @@ function AuthPageContent() {
     return "Enter your credentials to access your account";
   }, [isSignup, isConfirmation, inviteToken]);
 
-  // Validation errors (only show after field is touched)
-  const errors: FormErrors = useMemo(() => ({
-    email: touched.email ? validateEmail(email) : undefined,
-    password: touched.password ? validatePassword(password, isSignup) : undefined,
-  }), [email, password, isSignup, touched]);
-
-  const hasErrors = !!errors.email || !!errors.password;
+  const hasErrors = !!form.formState.errors.email || !!form.formState.errors.password;
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Event Handlers (memoized with useCallback)
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setEmail(e.target.value);
-    if (error) setError(null);
-  }, [error]);
-
-  const handlePasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setPassword(e.target.value);
-    if (error) setError(null);
-  }, [error]);
-
-  const handleBlur = useCallback((field: "email" | "password") => {
-    setTouched(prev => ({ ...prev, [field]: true }));
-  }, []);
-
-  const handleSubmit = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
-    
-    // Mark all fields as touched
-    setTouched({ email: true, password: true });
-    
-    // Validate before submitting
-    const emailError = validateEmail(email);
-    const passwordError = validatePassword(password, isSignup);
-    
-    if (emailError || passwordError) {
-      setError(emailError || passwordError || "Please fix the errors above");
-      return;
-    }
-
+  const handleSubmit = form.handleSubmit(async (values) => {
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
@@ -201,8 +167,8 @@ function AuthPageContent() {
     try {
       if (mode === "login") {
         const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
+          email: values.email.trim(),
+          password: values.password,
         });
 
         if (signInErr) {
@@ -224,7 +190,7 @@ function AuthPageContent() {
       } else {
         // Sign up with role
         const signupData: SignupData = {
-          email: email.trim(),
+          email: values.email.trim(),
           role: selectedRole || 'client'
         };
 
@@ -235,8 +201,8 @@ function AuthPageContent() {
         }
 
         const { error: signUpErr, data } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
+          email: values.email.trim(),
+          password: values.password,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
             data: signupData
@@ -259,10 +225,10 @@ function AuthPageContent() {
 
         if (data.user && !data.session) {
           // Store email for confirmation screen
-          setConfirmedEmail(email.trim());
+          setConfirmedEmail(values.email.trim());
           // Show success message
           setSuccessMessage("Check your email for a confirmation link to complete sign-up.");
-          setPassword("");
+          form.setValue("password", "");
           // Switch to confirmation mode to show personalized welcome
           setMode("confirmation");
         } else if (data.session) {
@@ -277,15 +243,15 @@ function AuthPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [email, password, mode, supabase, router, next, isSignup, selectedRole]);
+  });
 
   const toggleMode = useCallback(() => {
     setMode(prev => prev === "login" ? "signup" : "login");
     setError(null);
     setSuccessMessage(null);
-    setTouched({});
     setSelectedRole(null);
-  }, []);
+    form.reset({ email: "", password: "" });
+  }, [form]);
 
   const togglePasswordVisibility = useCallback(() => {
     setShowPassword(prev => !prev);
@@ -464,19 +430,15 @@ function AuthPageContent() {
             <input
               id="email"
               type="email"
-              value={email}
-              onChange={handleEmailChange}
-              onBlur={() => handleBlur("email")}
+              {...form.register("email")}
               required
               autoComplete="email"
               placeholder="you@example.com"
-              className={`auth-input ${errors.email ? "border-red-400 focus:border-red-500" : ""}`}
-              aria-invalid={errors.email ? "true" : "false"}
-              aria-describedby={errors.email ? "email-error" : undefined}
+              className={`auth-input ${form.formState.errors.email ? "border-red-400 focus:border-red-500" : ""}`}
             />
-            {errors.email && (
+            {form.formState.errors.email?.message && (
               <p id="email-error" className="text-[11px] text-red-500 mt-1" role="alert">
-                {errors.email}
+                {form.formState.errors.email.message}
               </p>
             )}
           </div>
@@ -493,16 +455,12 @@ function AuthPageContent() {
               <input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={handlePasswordChange}
-                onBlur={() => handleBlur("password")}
+                {...form.register("password")}
                 required
                 minLength={PASSWORD_MIN_LENGTH}
                 autoComplete={isSignup ? "new-password" : "current-password"}
                 placeholder="••••••••"
-                className={`auth-input pr-10 ${errors.password ? "border-red-400 focus:border-red-500" : ""}`}
-                aria-invalid={errors.password ? "true" : "false"}
-                aria-describedby={errors.password ? "password-error" : undefined}
+                className={`auth-input pr-10 ${form.formState.errors.password ? "border-red-400 focus:border-red-500" : ""}`}
               />
               <button
                 type="button"
@@ -539,9 +497,9 @@ function AuthPageContent() {
               </div>
             )}
             
-            {errors.password && (
+            {form.formState.errors.password?.message && (
               <p id="password-error" className="text-[11px] text-red-500 mt-1" role="alert">
-                {errors.password}
+                {form.formState.errors.password.message}
               </p>
             )}
           </div>

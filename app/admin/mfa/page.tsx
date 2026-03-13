@@ -122,12 +122,9 @@ function useMFAVerification() {
         throw new Error(ERROR_MESSAGES.SESSION_EXPIRED);
       }
 
-      const { error: updateError } = await supabase
-        .from("manager_profiles")
-        .update({ mfa_verified_at: new Date().toISOString() })
-        .eq("auth_user_id", authUser.id);
-
-      if (updateError) {
+      try {
+        await fetch("/api/admin/mfa/verified", { method: "POST" });
+      } catch (updateError) {
         // Log but don't block - verification succeeded
         console.error("Failed to update MFA timestamp:", updateError);
       }
@@ -304,7 +301,6 @@ export default function MFAPage() {
             type="submit"
             disabled={isDisabled}
             className={`w-full h-12.5 rounded-[var(--radius-md)] border-none bg-gradient-to-r from-[var(--color-gold)] to-[var(--color-gold-dark)] text-[#1a1202] text-[15px] font-bold cursor-pointer flex items-center justify-center gap-2 transition-all duration-150 ${isDisabled ? "opacity-65 cursor-not-allowed" : "hover:opacity-90 active:scale-[0.98]"}`}
-            aria-busy={isLoading}
           >
             {isLoading ? (
               <>

@@ -15,6 +15,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { getInitials, timeAgo } from '@/lib/utils/format';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Profile } from '@/types';
+import type { ApiResult } from '@/lib/api/result';
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
@@ -120,19 +121,19 @@ export function MessagesClient({ profile, conversations }: MessagesClientProps) 
     const content = newMessage.trim();
     setNewMessage('');
 
-    const { data } = await supabase
-      .from('messages')
-      .insert({
-        sender_id: profile.id,
-        receiver_id: selectedPartnerId,
-        content,
-        message_type: 'text',
-      })
-      .select()
-      .single();
+    const res = await fetch('/api/messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receiverId: selectedPartnerId, content, messageType: 'text' }),
+    });
+    const json = (await res.json()) as ApiResult<{ message: ConversationMessage }>;
 
-    if (data) {
-      setMessages((prev) => [...prev, data as ConversationMessage]);
+    if (res.ok && json.ok) {
+      setMessages((prev) => [...prev, json.data.message]);
+    } else {
+      // best-effort rollback of optimistic clear
+      setNewMessage(content);
+      console.error('Failed to send message:', json.ok ? 'Unknown error' : json.error);
     }
     setSending(false);
   };

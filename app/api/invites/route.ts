@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { getAuthUser } from '@/lib/auth';
 import { randomBytes } from 'crypto';
+import { parseJson, jsonErr, jsonOk } from '@/lib/api/http';
+import { createInviteSchema } from '@/lib/schemas/invites';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,7 +17,7 @@ export async function POST(request: NextRequest) {
     const user = await getAuthUser(supabase);
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return jsonErr('UNAUTHORIZED', 'Unauthorized', { status: 401 });
     }
 
     // Get user's role and distributor info
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!profile || profile.role !== 'distributor') {
-      return NextResponse.json({ error: 'Only distributors can send invites' }, { status: 403 });
+      return jsonErr('FORBIDDEN', 'Only distributors can send invites', { status: 403 });
     }
 
     const { data: distributor } = await supabase
@@ -36,14 +38,15 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!distributor) {
-      return NextResponse.json({ error: 'Distributor profile not found' }, { status: 404 });
+      return jsonErr('NOT_FOUND', 'Distributor profile not found', { status: 404 });
     }
 
-    const { email } = await request.json();
-
-    if (!email || !email.includes('@')) {
-      return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
+    const body = await parseJson(request, createInviteSchema);
+    if (!body.ok) {
+      return NextResponse.json(body.result, { status: 400 });
     }
+
+    const { email } = body.data;
 
     // Check if invite already exists and is pending
     const { data: existingInvite } = await supabase
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existingInvite) {
-      return NextResponse.json({ error: 'Invite already sent to this email' }, { status: 409 });
+      return jsonErr('CONFLICT', 'Invite already sent to this email', { status: 409 });
     }
 
     // Check if user is already a client of this distributor
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existingClient) {
-      return NextResponse.json({ error: 'User is already a client' }, { status: 409 });
+      return jsonErr('CONFLICT', 'User is already a client', { status: 409 });
     }
 
     // Generate unique token
@@ -86,14 +89,13 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Error creating invite:', error);
-      return NextResponse.json({ error: 'Failed to create invite' }, { status: 500 });
+      return jsonErr('INTERNAL_ERROR', 'Failed to create invite', { status: 500 });
     }
 
     // TODO: Send email with invite link
     // For now, just return the invite data
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       invite: {
         id: invite.id,
         email: invite.email,
@@ -104,18 +106,18 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Invite API error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return jsonErr('INTERNAL_ERROR', 'Internal server error', { status: 500 });
   }
 }
 
 // Get invites for the current distributor
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
     const user = await getAuthUser(supabase);
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return jsonErr('UNAUTHORIZED', 'Unauthorized', { status: 401 });
     }
 
     // Get user's role and distributor info
@@ -126,7 +128,7 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!profile || profile.role !== 'distributor') {
-      return NextResponse.json({ error: 'Only distributors can view invites' }, { status: 403 });
+      return jsonErr('FORBIDDEN', 'Only distributors can view invites', { status: 403 });
     }
 
     const { data: distributor } = await supabase
@@ -136,7 +138,7 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!distributor) {
-      return NextResponse.json({ error: 'Distributor profile not found' }, { status: 404 });
+      return jsonErr('NOT_FOUND', 'Distributor profile not found', { status: 404 });
     }
 
     const { data: invites, error } = await supabase
@@ -155,13 +157,13 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching invites:', error);
-      return NextResponse.json({ error: 'Failed to fetch invites' }, { status: 500 });
+      return jsonErr('INTERNAL_ERROR', 'Failed to fetch invites', { status: 500 });
     }
 
-    return NextResponse.json({ invites });
+    return jsonOk({ invites });
 
   } catch (error) {
     console.error('Get invites API error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return jsonErr('INTERNAL_ERROR', 'Internal server error', { status: 500 });
   }
 }

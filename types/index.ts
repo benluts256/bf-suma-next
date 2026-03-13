@@ -158,6 +158,36 @@ export interface Order {
   distributor?: Distributor;
 }
 
+export interface Product {
+  id: string;
+  sku: string | null;
+  name: string;
+  description: string | null;
+  price_ugx: number;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Inventory {
+  product_id: string;
+  available: number;
+  reserved: number;
+  updated_at: string;
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  product_id: string;
+  quantity: number;
+  unit_price_ugx: number;
+  line_total_ugx: number;
+  created_at: string;
+  product?: Product;
+}
+
 // ── UI Types ──────────────────────────────────────────────────────────────────
 
 export interface StatsCard {

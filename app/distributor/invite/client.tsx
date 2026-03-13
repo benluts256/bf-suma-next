@@ -6,12 +6,18 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useForm, useWatch } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation } from '@tanstack/react-query';
 import {
   LayoutDashboard, Users, Package, MessageSquare,
   MapPin, Mail, Copy, Check, Clock, UserCheck, X
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/dashboard/layout';
 import type { Profile, Distributor, ClientInvite } from '@/types';
+import { createInviteSchema, type CreateInviteInput } from '@/lib/schemas/invites';
+import type { ApiResult } from '@/lib/api/result';
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
@@ -38,45 +44,58 @@ interface DistributorInviteClientProps {
 
 export function DistributorInviteClient({
   profile,
-  distributor,
   invites,
 }: DistributorInviteClientProps) {
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+  const form = useForm<CreateInviteInput>({
+    resolver: zodResolver(createInviteSchema),
+    defaultValues: { email: '' },
+    mode: 'onSubmit',
+  });
+  const emailValue = useWatch({ control: form.control, name: 'email' });
 
-    try {
+  const inviteMutation = useMutation({
+    mutationFn: async (input: CreateInviteInput) => {
       const response = await fetch('/api/invites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify(input),
       });
+      const data = (await response.json()) as ApiResult<{ invite: ClientInvite }>;
+      return { response, data };
+    },
+    onSuccess: ({ response, data }) => {
+      setError(null);
+      setSuccess(null);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send invite');
+      if (!response.ok || !data || data.ok === false) {
+        if (data && data.ok === false && data.error.code === 'VALIDATION_ERROR' && data.error.fieldErrors?.email?.[0]) {
+          form.setError('email', { type: 'server', message: data.error.fieldErrors.email[0] });
+          return;
+        }
+        setError((data && data.ok === false ? data.error.message : null) ?? 'Failed to send invite');
+        return;
       }
 
+      const email = form.getValues('email');
       setSuccess(`Invite sent to ${email}`);
-      setEmail('');
+      form.reset({ email: '' });
+      router.refresh();
+    },
+    onError: () => {
+      setError('An unexpected error occurred');
+    },
+  });
 
-      // Refresh the page to show new invite
-      window.location.reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleInvite = form.handleSubmit(async (values) => {
+    setError(null);
+    setSuccess(null);
+    await inviteMutation.mutateAsync(values);
+  });
 
   const copyInviteLink = async (invite: ClientInvite) => {
     const link = `${window.location.origin}/auth?invite=${invite.token}`;
@@ -143,21 +162,23 @@ export function DistributorInviteClient({
                 <input
                   id="email"
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  {...form.register('email')}
                   placeholder="client@example.com"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
                 <button
                   type="submit"
-                  disabled={loading || !email.trim()}
+                  disabled={inviteMutation.isPending || !emailValue?.trim()}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   <Mail className="w-4 h-4" />
-                  {loading ? 'Sending...' : 'Send Invite'}
+                  {inviteMutation.isPending ? 'Sending...' : 'Send Invite'}
                 </button>
               </div>
+              {form.formState.errors.email?.message && (
+                <p className="mt-2 text-sm text-red-700">{form.formState.errors.email.message}</p>
+              )}
             </div>
           </form>
         </div>

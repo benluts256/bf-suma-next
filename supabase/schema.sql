@@ -221,6 +221,130 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- 10. PRODUCTS — Sellable items (minimal catalog)
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS products (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sku           TEXT UNIQUE,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  price_ugx     DECIMAL(12,2) NOT NULL CHECK (price_ugx >= 0),
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  metadata      JSONB DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 11. INVENTORY — Stock for products (single-warehouse model)
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS inventory (
+  product_id    UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  available     INTEGER NOT NULL DEFAULT 0 CHECK (available >= 0),
+  reserved      INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_available ON inventory(available);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 12. ORDER_ITEMS — Line items per order
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS order_items (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id    UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  quantity      INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_ugx DECIMAL(12,2) NOT NULL CHECK (unit_price_ugx >= 0),
+  line_total_ugx DECIMAL(12,2) NOT NULL CHECK (line_total_ugx >= 0),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- FUNCTION — Atomic checkout (prevents oversell)
+--   Strategy: conditional UPDATE inventory WHERE available >= qty per item.
+--   If any item can't be fulfilled, raise exception => whole transaction rolls back.
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION create_order_atomic(
+  _client_id UUID,
+  _shipping_address TEXT,
+  _items JSONB
+)
+RETURNS UUID AS $$
+DECLARE
+  _order_id UUID;
+  _row JSONB;
+  _product_id UUID;
+  _qty INTEGER;
+  _unit_price DECIMAL(12,2);
+  _line_total DECIMAL(12,2);
+  _items_count INTEGER := 0;
+  _total DECIMAL(12,2) := 0;
+BEGIN
+  IF _items IS NULL OR jsonb_typeof(_items) <> 'array' OR jsonb_array_length(_items) = 0 THEN
+    RAISE EXCEPTION 'No items provided';
+  END IF;
+
+  -- Create base order row
+  INSERT INTO orders (client_id, status, shipping_address)
+  VALUES (_client_id, 'pending', NULLIF(_shipping_address, ''))
+  RETURNING id INTO _order_id;
+
+  -- Process each item with atomic stock decrement
+  FOR _row IN SELECT * FROM jsonb_array_elements(_items)
+  LOOP
+    _product_id := (_row->>'product_id')::UUID;
+    _qty := (_row->>'quantity')::INTEGER;
+
+    IF _product_id IS NULL OR _qty IS NULL OR _qty <= 0 THEN
+      RAISE EXCEPTION 'Invalid item payload';
+    END IF;
+
+    -- Lock/validate via conditional update (atomic)
+    UPDATE inventory
+    SET available = available - _qty,
+        updated_at = now()
+    WHERE product_id = _product_id
+      AND available >= _qty;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Insufficient stock for product %', _product_id;
+    END IF;
+
+    -- Snapshot unit price at time of purchase
+    SELECT price_ugx INTO _unit_price
+    FROM products
+    WHERE id = _product_id AND is_active = true;
+
+    IF _unit_price IS NULL THEN
+      RAISE EXCEPTION 'Product unavailable %', _product_id;
+    END IF;
+
+    _line_total := _unit_price * _qty;
+    _items_count := _items_count + _qty;
+    _total := _total + _line_total;
+
+    INSERT INTO order_items (order_id, product_id, quantity, unit_price_ugx, line_total_ugx)
+    VALUES (_order_id, _product_id, _qty, _unit_price, _line_total);
+  END LOOP;
+
+  UPDATE orders
+  SET items_count = _items_count,
+      total_amount = _total,
+      updated_at = now()
+  WHERE id = _order_id;
+
+  RETURN _order_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- TRIGGERS — Auto-update updated_at timestamps
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -257,6 +381,18 @@ END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER orders_updated_at BEFORE UPDATE ON orders
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TRIGGER products_updated_at BEFORE UPDATE ON products
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TRIGGER inventory_updated_at BEFORE UPDATE ON inventory
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -355,6 +491,9 @@ ALTER TABLE distributor_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE client_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 
 -- ── Profiles ──────────────────────────────────────────────────────────────────
 CREATE POLICY "Users can view own profile"
@@ -557,6 +696,50 @@ CREATE POLICY "Admins can view all orders"
   USING (
     EXISTS (
       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- ── Products & Inventory ──────────────────────────────────────────────────────
+-- Public can read active products (catalog).
+CREATE POLICY "Public can view active products"
+  ON products FOR SELECT
+  USING (is_active = true);
+
+-- Managers can manage products/inventory.
+CREATE POLICY "Managers can manage products"
+  ON products FOR ALL
+  USING (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'));
+
+CREATE POLICY "Managers can manage inventory"
+  ON inventory FOR ALL
+  USING (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'));
+
+-- ── Order items ───────────────────────────────────────────────────────────────
+-- Clients/distributors/managers can read order items for orders they can already read.
+CREATE POLICY "Order readers can view order items"
+  ON order_items FOR SELECT
+  USING (
+    order_id IN (
+      SELECT o.id FROM orders o
+      WHERE
+        -- client who owns the order
+        o.client_id IN (
+          SELECT c.id FROM clients c
+          JOIN profiles p ON p.id = c.profile_id
+          WHERE p.auth_user_id = auth.uid()
+        )
+        OR
+        -- distributor assigned to the order
+        o.distributor_id IN (
+          SELECT d.id FROM distributors d
+          JOIN profiles p ON p.id = d.profile_id
+          WHERE p.auth_user_id = auth.uid()
+        )
+        OR
+        -- managers
+        EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager')
     )
   );
 

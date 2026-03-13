@@ -21,6 +21,7 @@ export default async function ClientDashboardPage() {
   const auth = await requireRole(supabase, 'client');
 
   if (!auth) redirect('/auth?error=unauthorized');
+  if (!auth.client) redirect('/auth?error=profile_not_found');
 
   // Fetch client-specific data
   const [
@@ -35,7 +36,7 @@ export default async function ClientDashboardPage() {
     supabase
       .from('orders')
       .select('*')
-      .eq('client_id', auth.profile.id)
+      .eq('client_id', auth.client.id)
       .order('created_at', { ascending: false })
       .limit(5),
   ]);

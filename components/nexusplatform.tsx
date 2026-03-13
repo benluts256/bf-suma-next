@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient, ROLE_ROUTES, type AppRole } from "@/lib/supabase-config";
 import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // ── Context ───────────────────────────────────────────────────────────────────
 interface NexusUser {
@@ -49,6 +50,21 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const supabase = useMemo(() => createBrowserClient(), []);
+  const queryClient = useMemo(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
+            retry: 1,
+            refetchOnWindowFocus: false,
+          },
+          mutations: { retry: 0 },
+        },
+      }),
+    []
+  );
 
   useEffect(() => {
     const init = async () => {
@@ -125,15 +141,17 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <NexusContext.Provider value={{ user, loading, signOut, toast }}>
-      {children}
-      {/* Toast layer */}
-      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 pointer-events-none">
-        {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} />
-        ))}
-      </div>
-    </NexusContext.Provider>
+    <QueryClientProvider client={queryClient}>
+      <NexusContext.Provider value={{ user, loading, signOut, toast }}>
+        {children}
+        {/* Toast layer */}
+        <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 pointer-events-none">
+          {toasts.map((t) => (
+            <ToastItem key={t.id} toast={t} />
+          ))}
+        </div>
+      </NexusContext.Provider>
+    </QueryClientProvider>
   );
 }
 

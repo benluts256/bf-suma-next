@@ -132,24 +132,21 @@ export function useRealtimeNotifications(profileId: string | null) {
 
   const markAsRead = useCallback(
     async (notificationId: string) => {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId);
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId }),
+      });
       setUnreadCount((prev) => Math.max(0, prev - 1));
     },
-    [supabase]
+    []
   );
 
   const markAllAsRead = useCallback(async () => {
     if (!profileId) return;
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', profileId)
-      .eq('is_read', false);
+    await fetch('/api/notifications/mark-all-read', { method: 'POST' });
     setUnreadCount(0);
-  }, [profileId, supabase]);
+  }, [profileId]);
 
   return { notifications, unreadCount, markAsRead, markAllAsRead };
 }

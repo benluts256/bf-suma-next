@@ -45,3 +45,6 @@ next-env.d.ts
 /ios
 /android
 capacitor.config.ts.bak
+
+.vercel
+.env*.local

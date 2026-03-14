@@ -1,753 +1,430 @@
--- ═══════════════════════════════════════════════════════════════════════════════
--- BF SUMA NEXUS — PRODUCTION DATABASE SCHEMA
--- Run this in Supabase SQL Editor (Dashboard → SQL Editor → New Query)
--- ═══════════════════════════════════════════════════════════════════════════════
-
--- ── Enable required extensions ────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ── Custom types ──────────────────────────────────────────────────────────────
 DO $$ BEGIN
-   CREATE TYPE app_role AS ENUM ('manager', 'distributor', 'client');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-
-DO $$ BEGIN
-  CREATE TYPE message_type AS ENUM ('text', 'image', 'system');
+CREATE TYPE app_role AS ENUM ('manager','distributor','client');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE TYPE activity_type AS ENUM (
-    'login', 'logout', 'signup',
-    'order_created', 'order_updated', 'order_completed',
-    'client_assigned', 'client_removed',
-    'location_updated', 'message_sent',
-    'subscription_created', 'subscription_updated', 'subscription_canceled',
-    'profile_updated', 'settings_changed'
-  );
+CREATE TYPE order_status AS ENUM ('pending','processing','shipped','delivered','cancelled');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 1. PROFILES — Unified user profiles linked to auth.users
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS profiles (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  auth_user_id  UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
-  role          app_role NOT NULL DEFAULT 'client',
-  full_name     TEXT NOT NULL DEFAULT '',
-  email         TEXT NOT NULL,
-  phone         TEXT,
-  avatar_url    TEXT,
-  is_active     BOOLEAN NOT NULL DEFAULT true,
-  metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+DO $$ BEGIN
+CREATE TYPE payment_status AS ENUM ('pending','paid','failed','refunded');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+CREATE TYPE message_type AS ENUM ('text','image','system');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+CREATE TYPE commission_status AS ENUM ('pending','approved','paid');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS profiles(
+
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+auth_user_id UUID UNIQUE
+REFERENCES auth.users(id)
+ON DELETE CASCADE,
+
+role app_role DEFAULT 'client',
+
+full_name TEXT,
+email TEXT,
+phone TEXT,
+avatar_url TEXT,
+
+is_active BOOLEAN DEFAULT TRUE,
+
+created_at TIMESTAMPTZ DEFAULT now(),
+updated_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_profiles_auth_user ON profiles(auth_user_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
-CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_auth
+ON profiles(auth_user_id);
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 2. DISTRIBUTORS — Extended distributor data
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS distributors (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  profile_id      UUID NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
-  distributor_code TEXT UNIQUE NOT NULL,
-  rank            TEXT NOT NULL DEFAULT 'Bronze',
-  rank_points     INTEGER NOT NULL DEFAULT 0,
-  total_sales     DECIMAL(12,2) NOT NULL DEFAULT 0,
-  commission_rate DECIMAL(5,4) NOT NULL DEFAULT 0.15,
-  region          TEXT,
-  is_verified     BOOLEAN NOT NULL DEFAULT false,
-  verified_at     TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE INDEX IF NOT EXISTS idx_profiles_role
+ON profiles(role);
+
+CREATE TABLE IF NOT EXISTS distributors(
+
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+profile_id UUID UNIQUE
+REFERENCES profiles(id)
+ON DELETE CASCADE,
+
+distributor_code TEXT UNIQUE,
+
+rank TEXT DEFAULT 'Bronze',
+rank_points INTEGER DEFAULT 0,
+
+total_sales NUMERIC(12,2) DEFAULT 0,
+
+commission_rate NUMERIC(5,4) DEFAULT 0.15,
+
+region TEXT,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_distributors_profile ON distributors(profile_id);
-CREATE INDEX IF NOT EXISTS idx_distributors_code ON distributors(distributor_code);
-CREATE INDEX IF NOT EXISTS idx_distributors_region ON distributors(region);
+CREATE TABLE IF NOT EXISTS clients(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 3. CLIENTS — Extended client data
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS clients (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  profile_id      UUID NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
-  distributor_id  UUID REFERENCES distributors(id) ON DELETE SET NULL,
-  shipping_address TEXT,
-  total_orders    INTEGER NOT NULL DEFAULT 0,
-  total_spent     DECIMAL(12,2) NOT NULL DEFAULT 0,
-  last_order_at   TIMESTAMPTZ,
-  notes           TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+profile_id UUID UNIQUE
+REFERENCES profiles(id)
+ON DELETE CASCADE,
+
+distributor_id UUID
+REFERENCES distributors(id),
+
+shipping_address TEXT,
+
+total_orders INTEGER DEFAULT 0,
+total_spent NUMERIC(12,2) DEFAULT 0,
+
+created_at TIMESTAMPTZ DEFAULT now(),
+updated_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_clients_profile ON clients(profile_id);
-CREATE INDEX IF NOT EXISTS idx_clients_distributor ON clients(distributor_id);
+CREATE TABLE IF NOT EXISTS products(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 4. CLIENT_INVITES — Client invitation system
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS client_invites (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  distributor_id  UUID NOT NULL REFERENCES distributors(id) ON DELETE CASCADE,
-  email           TEXT NOT NULL,
-  token           TEXT UNIQUE NOT NULL,
-  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired')),
-  expires_at      TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '7 days'),
-  accepted_at     TIMESTAMPTZ,
-  client_id       UUID REFERENCES clients(id) ON DELETE SET NULL,
-  metadata        JSONB DEFAULT '{}',
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+name TEXT NOT NULL,
+sku TEXT UNIQUE,
+
+description TEXT,
+
+price_ugx NUMERIC(12,2),
+
+is_active BOOLEAN DEFAULT TRUE,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_client_invites_distributor ON client_invites(distributor_id);
-CREATE INDEX IF NOT EXISTS idx_client_invites_email ON client_invites(email);
-CREATE INDEX IF NOT EXISTS idx_client_invites_token ON client_invites(token);
-CREATE INDEX IF NOT EXISTS idx_client_invites_status ON client_invites(status);
+CREATE TABLE IF NOT EXISTS inventory(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 5. MESSAGES — Real-time messaging between users
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS messages (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  sender_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  receiver_id   UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  content       TEXT NOT NULL,
-  message_type  message_type NOT NULL DEFAULT 'text',
-  is_read       BOOLEAN NOT NULL DEFAULT false,
-  read_at       TIMESTAMPTZ,
-  metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+product_id UUID PRIMARY KEY
+REFERENCES products(id)
+ON DELETE CASCADE,
+
+available INTEGER DEFAULT 0 CHECK(available>=0),
+
+reserved INTEGER DEFAULT 0 CHECK(reserved>=0),
+
+updated_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
-CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id);
-CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(
-  LEAST(sender_id, receiver_id),
-  GREATEST(sender_id, receiver_id),
-  created_at DESC
+CREATE TABLE IF NOT EXISTS orders(
+
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+client_id UUID
+REFERENCES clients(id),
+
+distributor_id UUID
+REFERENCES distributors(id),
+
+status order_status DEFAULT 'pending',
+
+total_amount NUMERIC(12,2),
+
+shipping_address TEXT,
+
+created_at TIMESTAMPTZ DEFAULT now(),
+updated_at TIMESTAMPTZ DEFAULT now()
+
 );
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 5. ACTIVITY_LOGS — Comprehensive activity tracking
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS activity_logs (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id       UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  activity      activity_type NOT NULL,
-  description   TEXT,
-  metadata      JSONB DEFAULT '{}',
-  ip_address    INET,
-  user_agent    TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE INDEX IF NOT EXISTS idx_orders_client
+ON orders(client_id);
+
+CREATE INDEX IF NOT EXISTS idx_orders_distributor
+ON orders(distributor_id);
+
+CREATE TABLE IF NOT EXISTS order_items(
+
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+order_id UUID
+REFERENCES orders(id)
+ON DELETE CASCADE,
+
+product_id UUID
+REFERENCES products(id),
+
+quantity INTEGER,
+
+unit_price NUMERIC(12,2),
+
+line_total NUMERIC(12,2),
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_activity ON activity_logs(activity);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at DESC);
+CREATE TABLE IF NOT EXISTS payments(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 6. DISTRIBUTOR_LOCATIONS — GPS tracking for distributors
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS distributor_locations (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  distributor_id  UUID NOT NULL REFERENCES distributors(id) ON DELETE CASCADE,
-  latitude        DECIMAL(10,8) NOT NULL,
-  longitude       DECIMAL(11,8) NOT NULL,
-  accuracy        DECIMAL(8,2),
-  heading         DECIMAL(5,2),
-  speed           DECIMAL(8,2),
-  is_online       BOOLEAN NOT NULL DEFAULT true,
-  last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+order_id UUID
+REFERENCES orders(id),
+
+amount NUMERIC(12,2),
+
+status payment_status DEFAULT 'pending',
+
+payment_method TEXT,
+
+transaction_reference TEXT,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_dist_locations_distributor ON distributor_locations(distributor_id);
-CREATE INDEX IF NOT EXISTS idx_dist_locations_online ON distributor_locations(is_online) WHERE is_online = true;
-CREATE INDEX IF NOT EXISTS idx_dist_locations_last_seen ON distributor_locations(last_seen_at DESC);
+CREATE TABLE IF NOT EXISTS payments(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 6. NOTIFICATIONS — In-app notification system
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS notifications (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  title       TEXT NOT NULL,
-  body        TEXT NOT NULL,
-  type        TEXT NOT NULL DEFAULT 'info',
-  is_read     BOOLEAN NOT NULL DEFAULT false,
-  action_url  TEXT,
-  metadata    JSONB DEFAULT '{}',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+order_id UUID
+REFERENCES orders(id),
+
+amount NUMERIC(12,2),
+
+status payment_status DEFAULT 'pending',
+
+payment_method TEXT,
+
+transaction_reference TEXT,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(user_id, is_read) WHERE is_read = false;
-CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+CREATE TABLE IF NOT EXISTS conversations(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 9. ORDERS — Order tracking
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS orders (
-  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  distributor_id      UUID REFERENCES distributors(id) ON DELETE SET NULL,
-  status              TEXT NOT NULL DEFAULT 'pending',
-  total_amount        DECIMAL(12,2) NOT NULL DEFAULT 0,
-  items_count         INTEGER NOT NULL DEFAULT 0,
-  shipping_address    TEXT,
-  estimated_delivery  TIMESTAMPTZ,
-  delivered_at        TIMESTAMPTZ,
-  notes               TEXT,
-  metadata            JSONB DEFAULT '{}',
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+user_a UUID REFERENCES profiles(id),
+user_b UUID REFERENCES profiles(id),
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_orders_client ON orders(client_id);
-CREATE INDEX IF NOT EXISTS idx_orders_distributor ON orders(distributor_id);
-CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
+CREATE TABLE IF NOT EXISTS messages(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 10. PRODUCTS — Sellable items (minimal catalog)
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS products (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  sku           TEXT UNIQUE,
-  name          TEXT NOT NULL,
-  description   TEXT,
-  price_ugx     DECIMAL(12,2) NOT NULL CHECK (price_ugx >= 0),
-  is_active     BOOLEAN NOT NULL DEFAULT true,
-  metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+conversation_id UUID
+REFERENCES conversations(id)
+ON DELETE CASCADE,
+
+sender_id UUID
+REFERENCES profiles(id),
+
+content TEXT,
+
+message_type message_type DEFAULT 'text',
+
+is_read BOOLEAN DEFAULT FALSE,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
-CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
+CREATE TABLE IF NOT EXISTS notifications(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 11. INVENTORY — Stock for products (single-warehouse model)
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS inventory (
-  product_id    UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-  available     INTEGER NOT NULL DEFAULT 0 CHECK (available >= 0),
-  reserved      INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+user_id UUID
+REFERENCES profiles(id),
+
+title TEXT,
+body TEXT,
+
+is_read BOOLEAN DEFAULT FALSE,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_inventory_available ON inventory(available);
+CREATE TABLE IF NOT EXISTS distributor_locations(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 12. ORDER_ITEMS — Line items per order
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS order_items (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  product_id    UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-  quantity      INTEGER NOT NULL CHECK (quantity > 0),
-  unit_price_ugx DECIMAL(12,2) NOT NULL CHECK (unit_price_ugx >= 0),
-  line_total_ugx DECIMAL(12,2) NOT NULL CHECK (line_total_ugx >= 0),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+distributor_id UUID
+REFERENCES distributors(id),
+
+latitude NUMERIC(10,8),
+longitude NUMERIC(11,8),
+
+is_online BOOLEAN DEFAULT TRUE,
+
+created_at TIMESTAMPTZ DEFAULT now()
+
 );
 
-CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
-CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+CREATE TABLE IF NOT EXISTS activity_logs(
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- FUNCTION — Atomic checkout (prevents oversell)
---   Strategy: conditional UPDATE inventory WHERE available >= qty per item.
---   If any item can't be fulfilled, raise exception => whole transaction rolls back.
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION create_order_atomic(
-  _client_id UUID,
-  _shipping_address TEXT,
-  _items JSONB
-)
-RETURNS UUID AS $$
-DECLARE
-  _order_id UUID;
-  _row JSONB;
-  _product_id UUID;
-  _qty INTEGER;
-  _unit_price DECIMAL(12,2);
-  _line_total DECIMAL(12,2);
-  _items_count INTEGER := 0;
-  _total DECIMAL(12,2) := 0;
-BEGIN
-  IF _items IS NULL OR jsonb_typeof(_items) <> 'array' OR jsonb_array_length(_items) = 0 THEN
-    RAISE EXCEPTION 'No items provided';
-  END IF;
+id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-  -- Create base order row
-  INSERT INTO orders (client_id, status, shipping_address)
-  VALUES (_client_id, 'pending', NULLIF(_shipping_address, ''))
-  RETURNING id INTO _order_id;
+user_id UUID
+REFERENCES profiles(id),
 
-  -- Process each item with atomic stock decrement
-  FOR _row IN SELECT * FROM jsonb_array_elements(_items)
-  LOOP
-    _product_id := (_row->>'product_id')::UUID;
-    _qty := (_row->>'quantity')::INTEGER;
+activity TEXT,
 
-    IF _product_id IS NULL OR _qty IS NULL OR _qty <= 0 THEN
-      RAISE EXCEPTION 'Invalid item payload';
-    END IF;
+metadata JSONB,
 
-    -- Lock/validate via conditional update (atomic)
-    UPDATE inventory
-    SET available = available - _qty,
-        updated_at = now()
-    WHERE product_id = _product_id
-      AND available >= _qty;
+created_at TIMESTAMPTZ DEFAULT now()
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Insufficient stock for product %', _product_id;
-    END IF;
+);
 
-    -- Snapshot unit price at time of purchase
-    SELECT price_ugx INTO _unit_price
-    FROM products
-    WHERE id = _product_id AND is_active = true;
-
-    IF _unit_price IS NULL THEN
-      RAISE EXCEPTION 'Product unavailable %', _product_id;
-    END IF;
-
-    _line_total := _unit_price * _qty;
-    _items_count := _items_count + _qty;
-    _total := _total + _line_total;
-
-    INSERT INTO order_items (order_id, product_id, quantity, unit_price_ugx, line_total_ugx)
-    VALUES (_order_id, _product_id, _qty, _unit_price, _line_total);
-  END LOOP;
-
-  UPDATE orders
-  SET items_count = _items_count,
-      total_amount = _total,
-      updated_at = now()
-  WHERE id = _order_id;
-
-  RETURN _order_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- TRIGGERS — Auto-update updated_at timestamps
--- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
+
+RETURNS TRIGGER
+
+LANGUAGE plpgsql
+
+AS $$
+
 BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
+
+NEW.updated_at = now();
+
+RETURN NEW;
+
 END;
-$$ LANGUAGE plpgsql;
 
-DO $$ BEGIN
-  CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON profiles
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+$$;
 
-DO $$ BEGIN
-  CREATE TRIGGER distributors_updated_at BEFORE UPDATE ON distributors
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER clients_updated_at BEFORE UPDATE ON clients
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-   CREATE TRIGGER client_invites_updated_at BEFORE UPDATE ON client_invites
-     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER orders_updated_at BEFORE UPDATE ON orders
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER products_updated_at BEFORE UPDATE ON products
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TRIGGER inventory_updated_at BEFORE UPDATE ON inventory
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- FUNCTION — Handle client invite acceptance
--- ═══════════════════════════════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION accept_client_invite(_invite_token TEXT, _client_id UUID)
-RETURNS VOID AS $$
-DECLARE
-  _invite_record RECORD;
-BEGIN
-  -- Find the invite
-  SELECT * INTO _invite_record
-  FROM client_invites
-  WHERE token = _invite_token AND status = 'pending' AND expires_at > now();
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Invalid or expired invite token';
-  END IF;
-
-  -- Update invite status
-  UPDATE client_invites
-  SET status = 'accepted', accepted_at = now(), client_id = _client_id
-  WHERE id = _invite_record.id;
-
-  -- Link client to distributor
-  UPDATE clients
-  SET distributor_id = _invite_record.distributor_id
-  WHERE id = _client_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- FUNCTION — Auto-create profile on user signup
--- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+
+RETURNS TRIGGER
+
+LANGUAGE plpgsql
+SECURITY DEFINER
+
+AS $$
+
 DECLARE
-   _role app_role;
-   _profile_id UUID;
-   _client_id UUID;
+user_role app_role;
+
 BEGIN
-   -- Get role from user metadata, default to 'client'
-   _role := COALESCE(
-     (NEW.raw_user_meta_data->>'role')::app_role,
-     'client'
-   );
 
-   -- Create profile
-   INSERT INTO profiles (auth_user_id, role, full_name, email)
-   VALUES (
-     NEW.id,
-     _role,
-     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
-     NEW.email
-   )
-   RETURNING id INTO _profile_id;
+user_role :=
+COALESCE(
+(NEW.raw_user_meta_data->>'role')::app_role,
+'client'
+);
 
-   -- Create role-specific record
-   IF _role = 'distributor' THEN
-     INSERT INTO distributors (profile_id, distributor_code)
-     VALUES (_profile_id, 'DST-' || substr(md5(random()::text), 1, 8));
-   ELSIF _role = 'client' THEN
-     INSERT INTO clients (profile_id)
-     VALUES (_profile_id)
-     RETURNING id INTO _client_id;
+INSERT INTO profiles(auth_user_id,role,email)
+VALUES (NEW.id,user_role,NEW.email);
 
-     -- Handle client invite if token provided
-     IF NEW.raw_user_meta_data->>'invite_token' IS NOT NULL THEN
-       PERFORM accept_client_invite(NEW.raw_user_meta_data->>'invite_token', _client_id);
-     END IF;
-   END IF;
+RETURN NEW;
 
-   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Drop existing trigger if any, then create
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+$$;
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- ROW LEVEL SECURITY (RLS) POLICIES
--- ═══════════════════════════════════════════════════════════════════════════════
+DROP TRIGGER IF EXISTS create_profile_on_signup ON auth.users;
 
--- Enable RLS on all tables
+CREATE TRIGGER create_profile_on_signup
+
+AFTER INSERT ON auth.users
+
+FOR EACH ROW
+
+EXECUTE FUNCTION handle_new_user();
+
+CREATE OR REPLACE FUNCTION update_client_order_stats()
+
+RETURNS TRIGGER
+
+LANGUAGE plpgsql
+
+AS $$
+
+BEGIN
+
+UPDATE clients
+
+SET
+total_orders = total_orders + 1,
+total_spent = total_spent + NEW.total_amount
+
+WHERE id = NEW.client_id;
+
+RETURN NEW;
+
+END;
+
+$$;
+
+CREATE TRIGGER update_client_stats
+
+AFTER INSERT ON orders
+
+FOR EACH ROW
+
+EXECUTE FUNCTION update_client_order_stats();
+
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE distributors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE distributor_locations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE client_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 
--- ── Profiles ──────────────────────────────────────────────────────────────────
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
-  USING (auth.uid() = auth_user_id);
+CREATE POLICY "Users view own profile"
 
-CREATE POLICY "Managers can view all profiles"
-   ON profiles FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles p
-       WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'
-     )
-   );
+ON profiles FOR SELECT
 
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = auth_user_id)
-  WITH CHECK (auth.uid() = auth_user_id);
+USING(auth.uid() = auth_user_id);
 
--- ── Distributors ──────────────────────────────────────────────────────────────
-CREATE POLICY "Distributors can view own record"
-  ON distributors FOR SELECT
-  USING (
-    profile_id IN (
-      SELECT id FROM profiles WHERE auth_user_id = auth.uid()
-    )
-  );
+CREATE POLICY "Clients view orders"
 
-CREATE POLICY "Managers can view all distributors"
-   ON distributors FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
+ON orders FOR SELECT
 
-CREATE POLICY "Managers can update distributors"
-   ON distributors FOR UPDATE
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
+USING(
 
--- ── Clients ───────────────────────────────────────────────────────────────────
-CREATE POLICY "Clients can view own record"
-  ON clients FOR SELECT
-  USING (
-    profile_id IN (
-      SELECT id FROM profiles WHERE auth_user_id = auth.uid()
-    )
-  );
+client_id IN (
 
-CREATE POLICY "Distributors can view assigned clients"
-  ON clients FOR SELECT
-  USING (
-    distributor_id IN (
-      SELECT d.id FROM distributors d
-      JOIN profiles p ON p.id = d.profile_id
-      WHERE p.auth_user_id = auth.uid()
-    )
-  );
+SELECT c.id
 
-CREATE POLICY "Managers can view all clients"
-   ON clients FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
+FROM clients c
+JOIN profiles p ON p.id = c.profile_id
 
--- ── Messages ──────────────────────────────────────────────────────────────────
-CREATE POLICY "Users can view own messages"
-  ON messages FOR SELECT
-  USING (
-    sender_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-    OR receiver_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+WHERE p.auth_user_id = auth.uid()
 
-CREATE POLICY "Users can send messages"
-  ON messages FOR INSERT
-  WITH CHECK (
-    sender_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+)
 
-CREATE POLICY "Users can mark own messages as read"
-  ON messages FOR UPDATE
-  USING (
-    receiver_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+);
 
--- ── Activity Logs ─────────────────────────────────────────────────────────────
-CREATE POLICY "Users can view own activity"
-  ON activity_logs FOR SELECT
-  USING (
-    user_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+CREATE POLICY "Users read own messages"
 
-CREATE POLICY "Managers can view all activity"
-   ON activity_logs FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
+ON messages FOR SELECT
 
-CREATE POLICY "System can insert activity logs"
-  ON activity_logs FOR INSERT
-  WITH CHECK (true);
+USING(
 
--- ── Distributor Locations ─────────────────────────────────────────────────────
-CREATE POLICY "Distributors can update own location"
-  ON distributor_locations FOR ALL
-  USING (
-    distributor_id IN (
-      SELECT d.id FROM distributors d
-      JOIN profiles p ON p.id = d.profile_id
-      WHERE p.auth_user_id = auth.uid()
-    )
-  );
+sender_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
 
-CREATE POLICY "Managers can view all locations"
-   ON distributor_locations FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
+);
 
--- ── Client Invites ────────────────────────────────────────────────────────────
-CREATE POLICY "Distributors can view own invites"
-   ON client_invites FOR SELECT
-   USING (
-     distributor_id IN (
-       SELECT d.id FROM distributors d
-       JOIN profiles p ON p.id = d.profile_id
-       WHERE p.auth_user_id = auth.uid()
-     )
-   );
-
-CREATE POLICY "Distributors can create invites"
-   ON client_invites FOR INSERT
-   WITH CHECK (
-     distributor_id IN (
-       SELECT d.id FROM distributors d
-       JOIN profiles p ON p.id = d.profile_id
-       WHERE p.auth_user_id = auth.uid()
-     )
-   );
-
-CREATE POLICY "Managers can view all invites"
-   ON client_invites FOR SELECT
-   USING (
-     EXISTS (
-       SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'manager'
-     )
-   );
-
--- ── Notifications ─────────────────────────────────────────────────────────────
-CREATE POLICY "Users can view own notifications"
-  ON notifications FOR SELECT
-  USING (
-    user_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
-
-CREATE POLICY "Users can update own notifications"
-  ON notifications FOR UPDATE
-  USING (
-    user_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
-
-CREATE POLICY "System can insert notifications"
-  ON notifications FOR INSERT
-  WITH CHECK (true);
-
--- ── Orders ────────────────────────────────────────────────────────────────────
-CREATE POLICY "Clients can view own orders"
-  ON orders FOR SELECT
-  USING (
-    client_id IN (
-      SELECT c.id FROM clients c
-      JOIN profiles p ON p.id = c.profile_id
-      WHERE p.auth_user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Distributors can view assigned orders"
-  ON orders FOR SELECT
-  USING (
-    distributor_id IN (
-      SELECT d.id FROM distributors d
-      JOIN profiles p ON p.id = d.profile_id
-      WHERE p.auth_user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Admins can view all orders"
-  ON orders FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE auth_user_id = auth.uid() AND role = 'admin'
-    )
-  );
-
--- ── Products & Inventory ──────────────────────────────────────────────────────
--- Public can read active products (catalog).
-CREATE POLICY "Public can view active products"
-  ON products FOR SELECT
-  USING (is_active = true);
-
--- Managers can manage products/inventory.
-CREATE POLICY "Managers can manage products"
-  ON products FOR ALL
-  USING (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'))
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'));
-
-CREATE POLICY "Managers can manage inventory"
-  ON inventory FOR ALL
-  USING (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'))
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager'));
-
--- ── Order items ───────────────────────────────────────────────────────────────
--- Clients/distributors/managers can read order items for orders they can already read.
-CREATE POLICY "Order readers can view order items"
-  ON order_items FOR SELECT
-  USING (
-    order_id IN (
-      SELECT o.id FROM orders o
-      WHERE
-        -- client who owns the order
-        o.client_id IN (
-          SELECT c.id FROM clients c
-          JOIN profiles p ON p.id = c.profile_id
-          WHERE p.auth_user_id = auth.uid()
-        )
-        OR
-        -- distributor assigned to the order
-        o.distributor_id IN (
-          SELECT d.id FROM distributors d
-          JOIN profiles p ON p.id = d.profile_id
-          WHERE p.auth_user_id = auth.uid()
-        )
-        OR
-        -- managers
-        EXISTS (SELECT 1 FROM profiles p WHERE p.auth_user_id = auth.uid() AND p.role = 'manager')
-    )
-  );
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- REALTIME — Enable realtime for key tables
--- ═══════════════════════════════════════════════════════════════════════════════
 ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE client_invites;
 ALTER PUBLICATION supabase_realtime ADD TABLE distributor_locations;
-ALTER PUBLICATION supabase_realtime ADD TABLE activity_logs;
+
